@@ -102,3 +102,15 @@ test('רשימה עם פחות שאלות משותפות מהסף לא מדור�
   const ranked = rankParties(answers, [belowThreshold, atThreshold]);
   assert.deepEqual(ranked.map((r) => r.partyId), ['enough']);
 });
+
+test('כמה תשובות מסומנות: קובעת התשובה הקרובה ביותר לעמדת הרשימה', () => {
+  const p = party('p', { q1: 2 });
+  assert.equal(scoreParty({ q1: { values: [-2, 1], important: false } }, p).percent, 75);
+  assert.equal(scoreParty({ q1: { values: [-2, 2], important: false } }, p).percent, 100);
+});
+
+test('רשימת תשובות ריקה נחשבת דילוג', () => {
+  const result = scoreParty({ q1: { values: [], important: false }, q2: { values: [0], important: false } }, party('p', { q1: 2, q2: 0 }));
+  assert.equal(result.answered, 1);
+  assert.equal(result.percent, 100);
+});

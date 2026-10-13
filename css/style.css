@@ -211,6 +211,14 @@ legend {
   accent-color: var(--accent);
 }
 .option input:focus-visible { outline: none; }
+.option .detail {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.88rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.hint { margin: -0.5rem 0 0.75rem; }
 .option-skip {
   border-style: dashed;
   color: var(--muted);

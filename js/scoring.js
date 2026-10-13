@@ -1,7 +1,7 @@
 // אלגוריתם ההתאמה. פונקציות טהורות בלבד, בלי גישה ל-DOM או לרשת.
 //
-// answers: { [questionId]: { value: number | null, important: boolean } }
-//   value === null פירושו שהמשתמש דילג על השאלה.
+// answers: { [questionId]: { values: number[], important: boolean } }
+//   values ריק פירושו שהמשתמש דילג על השאלה. נתמך גם value יחיד (מספר או null).
 // party:   { id, name, positions: { [questionId]: { value: number | null, source, note } } }
 
 export const MAX_DISTANCE = 4;
@@ -20,6 +20,18 @@ export function questionScore(userValue, partyValue) {
   return 1 - distance / MAX_DISTANCE;
 }
 
+// המשתמש יכול לסמן כמה תשובות בשאלה (values), או אחת (value). רשימה ריקה פירושה דילוג.
+function userValues(answer) {
+  if (!answer) return [];
+  const raw = Array.isArray(answer.values) ? answer.values : [answer.value];
+  return raw.filter(isValue);
+}
+
+// כשסומנו כמה תשובות, קובעת התשובה שהכי קרובה לעמדת הרשימה.
+export function bestScore(userValueList, partyValue) {
+  return Math.max(...userValueList.map((value) => questionScore(value, partyValue)));
+}
+
 export function scoreParty(answers, party) {
   const positions = party.positions || {};
   let weightedSum = 0;
@@ -28,7 +40,8 @@ export function scoreParty(answers, party) {
   let covered = 0;
 
   for (const [questionId, answer] of Object.entries(answers)) {
-    if (!answer || !isValue(answer.value)) continue;
+    const values = userValues(answer);
+    if (values.length === 0) continue;
     answered++;
 
     const position = positions[questionId];
@@ -36,7 +49,7 @@ export function scoreParty(answers, party) {
     covered++;
 
     const weight = answer.important ? IMPORTANT_WEIGHT : 1;
-    weightedSum += questionScore(answer.value, position.value) * weight;
+    weightedSum += bestScore(values, position.value) * weight;
     weightSum += weight;
   }
 

@@ -13,7 +13,7 @@ let questions = [];
 let parties = [];
 let dataUpdated = '';
 
-// choices: { [questionId]: { choice: answerId | SKIP, important: boolean } }
+// choices: { [questionId]: { choices: answerId[] | [SKIP], important: boolean } }
 let state = { index: 0, choices: {} };
 
 function el(tag, props = {}, ...children) {
@@ -46,6 +46,7 @@ function howItWorks() {
     el('ul', {},
       el('li', {}, 'בכל שאלה התשובות מסודרות על ציר עמדות מ־2- עד 2+. לכל מפלגה נקבע מיקום על אותו ציר, לפי מקור שמצוין לצד העמדה.'),
       el('li', {}, 'ציון שאלה הוא 1 פחות המרחק בין התשובה שלך לעמדת המפלגה, חלקי 4. תשובה זהה נותנת 1, ותשובה בקצה ההפוך נותנת 0.'),
+      el('li', {}, 'אם סימנת כמה תשובות בשאלה, הציון נקבע לפי התשובה שסימנת שהכי קרובה לעמדת הרשימה.'),
       el('li', {}, `שאלה שסומנה כחשובה במיוחד נספרת במשקל ${IMPORTANT_WEIGHT}.`),
       el('li', {}, 'אחוז ההתאמה הוא הממוצע המשוקלל של ציוני השאלות, כפול 100.'),
       el('li', {}, 'שאלות שדילגת עליהן, ושאלות שבהן עמדת המפלגה לא ידועה, לא נכנסות לחישוב.'),
@@ -112,23 +113,35 @@ function startQuiz() {
 
 function renderQuestion() {
   const question = questions[state.index];
-  const saved = state.choices[question.id] || { choice: null, important: false };
+  const saved = state.choices[question.id] || { choices: [], important: false };
   const isLast = state.index === questions.length - 1;
   const position = state.index + 1;
 
-  const nextButton = el('button', { class: 'btn btn-primary', type: 'submit', disabled: saved.choice === null },
+  const nextButton = el('button', { class: 'btn btn-primary', type: 'submit', disabled: saved.choices.length === 0 },
     isLast ? 'לתוצאות' : 'הבא');
 
-  const option = (id, text, extraClass = '') =>
+  const checkedBoxes = () => [...form.querySelectorAll('input[name="answer"]:checked')];
+
+  // אפשר לסמן כמה תשובות. "דלג" והתשובות עצמן מבטלים זה את זה.
+  const onPick = (box) => {
+    if (box.checked) {
+      for (const other of checkedBoxes()) {
+        if (other !== box && (box.value === SKIP || other.value === SKIP)) other.checked = false;
+      }
+    }
+    nextButton.disabled = checkedBoxes().length === 0;
+  };
+
+  const option = (id, text, detail, extraClass = '') =>
     el('label', { class: `option ${extraClass}` },
       el('input', {
-        type: 'radio',
+        type: 'checkbox',
         name: 'answer',
         value: id,
-        checked: saved.choice === id,
-        onchange: () => { nextButton.disabled = false; },
+        checked: saved.choices.includes(id),
+        onchange: (event) => onPick(event.target),
       }),
-      el('span', {}, text)
+      el('span', {}, text, detail ? el('small', { class: 'detail' }, detail) : null)
     );
 
   const importantBox = el('input', { type: 'checkbox', name: 'important', checked: saved.important });
@@ -136,9 +149,9 @@ function renderQuestion() {
   const form = el('form', {
     onsubmit: (event) => {
       event.preventDefault();
-      const picked = form.querySelector('input[name="answer"]:checked');
-      if (!picked) return;
-      state.choices[question.id] = { choice: picked.value, important: importantBox.checked };
+      const picked = checkedBoxes().map((box) => box.value);
+      if (picked.length === 0) return;
+      state.choices[question.id] = { choices: picked, important: importantBox.checked };
       if (isLast) {
         renderResults();
       } else {
@@ -149,8 +162,9 @@ function renderQuestion() {
   },
     el('fieldset', {},
       el('legend', {}, question.text),
-      question.answers.map((answer) => option(answer.id, answer.text)),
-      option(SKIP, 'אין לי דעה / דלג', 'option-skip')
+      el('p', { class: 'muted small hint' }, 'אפשר לסמן יותר מתשובה אחת.'),
+      question.answers.map((answer) => option(answer.id, answer.text, answer.detail)),
+      option(SKIP, 'אין לי דעה / דלג', null, 'option-skip')
     ),
     el('label', { class: 'option option-important' },
       importantBox,
@@ -192,8 +206,8 @@ function buildAnswers() {
   for (const question of questions) {
     const saved = state.choices[question.id];
     if (!saved) continue;
-    const picked = question.answers.find((answer) => answer.id === saved.choice);
-    answers[question.id] = { value: picked ? picked.value : null, important: saved.important };
+    const values = question.answers.filter((answer) => saved.choices.includes(answer.id)).map((answer) => answer.value);
+    answers[question.id] = { values, important: saved.important };
   }
   return answers;
 }
@@ -208,7 +222,7 @@ function sourceNode(source) {
 
 function breakdownItem(question, party) {
   const saved = state.choices[question.id];
-  const userAnswer = question.answers.find((answer) => answer.id === saved?.choice);
+  const userAnswers = question.answers.filter((answer) => saved?.choices.includes(answer.id));
   const position = party.positions?.[question.id];
   const known = position && typeof position.value === 'number';
   const partyAnswer = known ? question.answers.find((answer) => answer.value === position.value) : null;
@@ -221,12 +235,14 @@ function breakdownItem(question, party) {
   }
 
   return el('li', {},
-    el('div', { class: 'topic' }, question.topic, saved?.important && userAnswer ? ' · סומן כחשוב במיוחד' : ''),
+    el('div', { class: 'topic' }, question.topic, saved?.important && userAnswers.length ? ' · סומן כחשוב במיוחד' : ''),
     el('h3', {}, question.text),
     el('dl', {},
-      el('dt', {}, 'התשובה שלך'),
-      el('dd', {}, userAnswer ? userAnswer.text : 'דילגת על השאלה (לא נכלל בחישוב)'),
-      el('dt', {}, 'עמדת המפלגה'),
+      el('dt', {}, userAnswers.length > 1 ? 'התשובות שלך' : 'התשובה שלך'),
+      userAnswers.length
+        ? userAnswers.map((answer) => el('dd', {}, answer.text))
+        : el('dd', {}, 'דילגת על השאלה (לא נכלל בחישוב)'),
+      el('dt', {}, 'עמדת הרשימה'),
       el('dd', {}, partyText),
       known && position.note ? [el('dt', {}, 'הסבר'), el('dd', {}, position.note)] : null,
       known ? [el('dt', {}, 'מקור'), el('dd', {}, sourceNode(position.source))] : null
